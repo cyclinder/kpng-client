@@ -16,8 +16,8 @@ spec:
         app: kpng
     spec:
       # to enable progressive deployment on existing cluster you can use node labels:
-      #nodeSelector:
-      #  kpng: kpng
+      nodeSelector:
+        kubernetes.io/os: linux
       serviceAccountName: kpng
       hostNetwork: true
       # so that kpng always runs on the controlplane nodes...
@@ -33,7 +33,7 @@ spec:
           value: warn
         name: kpng
         volumeMounts:
-        - name: empty
+        - name: kpng-sock
           mountPath: /k8s
         - mountPath: /var/lib/kpng
           name: kpng-config
@@ -42,7 +42,7 @@ spec:
         - --kubeconfig=/var/lib/kpng/kubeconfig.conf
         - to-api
         - --listen=unix:///k8s/proxy.sock
-      - image: gauravkghildiyal/kpng:latest
+      - image: cyclinder/kpng:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: GOLANG_PROTOBUF_REGISTRATION_CONFLICT
@@ -51,7 +51,7 @@ spec:
         securityContext:
             privileged: true
         volumeMounts:
-        - name: empty
+        - name: kpng-sock
           mountPath: /k8s
         - name: modules
           mountPath: /lib/modules
@@ -59,8 +59,10 @@ spec:
         args: [ "local", "--api=unix:///k8s/proxy.sock", "to-iptables" ]
         #- --dry-run
       volumes:
-      - name: empty
-        emptyDir: {}
+      - name: kpng-sock
+        hostPath:
+          path: /var/lib/kpng
+          type: DirectoryOrCreate
       - name: modules
         hostPath:
           path: /lib/modules

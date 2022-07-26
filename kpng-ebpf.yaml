@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  creationTimestamp: null
+  labels:
+    app: kpng-ebpf
+  name: kpng-ebpf
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: kpng-ebpf
+  template:
+    metadata:
+      labels:
+        app: kpng-ebpf
+    spec:
+      # to enable progressive deployment on existing cluster you can use node labels:
+      #nodeSelector:
+      #  kpng: kpng
+      serviceAccountName: kube-proxy
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      # so that kpng always runs on the controlplane nodes...
+      tolerations:
+      - operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - image: cilium/cilium-bpftool:b5ba881d2a7ec68d88ecd72efd60ac551c720701
+        imagePullPolicy: IfNotPresent
+        name: kpng-ebpf-tools
+        securityContext:
+          privileged: true
+        command: [ "/bin/bash", "-c", "--", "mount bpffs /sys/fs/bpf -t bpf && sleep infinity" ]
+        volumeMounts:
+        - name: modules
+          mountPath: /lib/modules
+          readOnly: true
+        - name: bpf-maps
+          mountPath: /sys/fs/bpf
+          mountPropagation: Bidirectional
+        - name: bpf-log
+          mountPath: /tracing
+      - image: cyclinder/kpng-0724:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: GOLANG_PROTOBUF_REGISTRATION_CONFLICT
+          value: warn
+        name: kpng-ebpf
+        securityContext:
+            privileged: true
+        volumeMounts:
+        - mountPath: /var/lib/kpng
+          name: kpng-config
+        - name: modules
+          mountPath: /lib/modules
+          readOnly: true
+        - name: bpf-maps
+          mountPath: /sys/fs/bpf
+          mountPropagation: Bidirectional
+        - name: cgroup-v2-fs
+          mountPath: /sys/fs/cgroup/unified
+          readOnly: true
+        - name: cgroup-v2-mount
+          mountPath: /host-mount/mounts
+          mountPropagation: HostToContainer
+        args:
+        - kube
+        - --service-proxy-name=kpng-ebpf
+        - --kubeconfig=/var/lib/kpng/kubeconfig.conf
+        - to-local
+        - to-ebpf
+        #- --dry-run
+      volumes:
+      - name: modules
+        hostPath:
+          path: /lib/modules
+      - name: kpng-config
+        configMap:
+          name: kpng
+      - name: bpf-maps
+        hostPath:
+          path: /sys/fs/bpf
+          type: DirectoryOrCreate
+      - name: bpf-log
+        hostPath:
+          path: /sys/kernel/debug/tracing
+      - name: cgroup-v2-fs
+        hostPath:
+          path: /sys/fs/cgroup/unified
+      - name: cgroup-v2-mount
+        hostPath:
+          path: /proc/mounts

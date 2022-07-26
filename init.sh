@@ -1,10 +1,24 @@
 #! /bin/bash
 
-kubectl create sa -n kube-system kpng
-kubectl create clusterrolebinding kpng --clusterrole=system:node-proxier --serviceaccount=kube-system:kpng
+: ${BACKEND:="iptables"}
 
-cp /root/.kube/config kubeconfig.conf
-kubectl create cm -n kube-system kpng --from-file=kubeconfig.conf
-rm kubeconfig.conf
+usage(){
+  echo "usage:"
+  echo "   ./init.sh iptables or ipvs or nft or ebpf"
+  echo "   Example: ./init.sh ipvs"
+}
 
-kubectl apply -f kpng.yaml
+if [ -z "$1" ]; then
+  usage
+  exit 1
+fi
+
+BACKEND=$1
+export BACKEND=${BACKEND}
+if [ "$BACKEND" == "ebpf" ]; then
+  echo "WARNING: OS Kernel must be  > 5.15"
+  kubectl apply -f kpng-ebpf.yaml
+else
+  envsubst <kpng.yaml.tmpl > kpng.yaml
+  kubectl apply -f  kpng.yaml
+fi
